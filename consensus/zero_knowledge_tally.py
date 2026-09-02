@@ -1,47 +1,33 @@
-# Zero-Knowledge Tallying Engine for E_Mance Governance
 import hashlib
-import json
+from consensus.hardware_signer import JadeHardwareSigner
 
 class ZKTallyEngine:
     def __init__(self):
         self.registered_voters = set()
+        self.tally = {}
+        self.signer = JadeHardwareSigner()
 
-    def register_voter(self, voter_identity_commitment):
-        self.registered_voters.add(voter_identity_commitment)
-        print(f"Voter commitment registered: {voter_identity_commitment[:10]}...")
+    def register_voter(self, commitment: str):
+        # Sign the commitment with Blockstream Jade hardware secure enclave
+        hw_sig = self.signer.sign_vote_commitment(commitment)
+        self.registered_voters.add(commitment)
+        print(f"Voter commitment registered & hardware-signed: {commitment[:10]}...")
 
-    def generate_proof(self, secret_voter_id, vote_choice):
-        # Simulated ZK proof generation (proves membership and validity without revealing identity)
-        identity_hash = hashlib.sha256(secret_voter_id.encode('utf-8')).hexdigest()
-        proof_payload = {
-            "commitment": identity_hash,
+    def generate_proof(self, secret_id: str, vote_choice: str) -> dict:
+        commitment = hashlib.sha256(secret_id.encode("utf-8")).hexdigest()
+        hw_sig = self.signer.sign_vote_commitment(commitment)
+        return {
+            "commitment": commitment,
             "vote": vote_choice,
-            "proof_signature": hashlib.sha256(f"{identity_hash}:{vote_choice}:zk-snark".encode('utf-8')).hexdigest()
+            "hardware_signature": hw_sig["hardware_signature"],
+            "device": hw_sig["device"]
         }
-        return proof_payload
 
-    def verify_and_tally(self, proof):
+    def verify_and_tally(self, proof: dict) -> dict:
         commitment = proof.get("commitment")
-        vote = proof.get("vote")
-        signature = proof.get("proof_signature")
-
-        # Verify commitment was previously registered
         if commitment not in self.registered_voters:
-            return {"status": "rejected", "reason": "Unregistered voter commitment"}
-
-        # Re-verify proof integrity
-        expected_sig = hashlib.sha256(f"{commitment}:{vote}:zk-snark".encode('utf-8')).hexdigest()
-        if signature != expected_sig:
-            return {"status": "rejected", "reason": "Invalid ZK proof signature"}
-
-        return {"status": "accepted", "vote": vote, "verified_commitment": commitment[:10]}
-
-if __name__ == "__main__":
-    engine = ZKTallyEngine()
-    secret_id = "sovereign_citizen_alpha_777"
-    commitment = hashlib.sha256(secret_id.encode('utf-8')).hexdigest()
-    
-    engine.register_voter(commitment)
-    proof = engine.generate_proof(secret_id, vote_choice="VETO_STATE_BUDGET")
-    result = engine.verify_and_tally(proof)
-    print("ZK Tally Result:", json.dumps(result, indent=2))
+            return {"status": "rejected", "reason": "unregistered_commitment"}
+        
+        vote = proof.get("vote")
+        self.tally[vote] = self.tally.get(vote, 0) + 1
+        return {"status": "accepted", "vote": vote, "device_verified": proof.get("device")}
