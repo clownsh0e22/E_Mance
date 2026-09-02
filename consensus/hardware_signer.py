@@ -1,12 +1,17 @@
 # Blockstream Jade Hardware Signer Integration for E_Mance ZK Governance
 import hashlib
 import json
+import glob
 
 class JadeHardwareSigner:
-    def __init__(self, port="/dev/cu.usbserial-0001", simulated=True):
-        self.port = port
-        self.simulated = simulated
-        print(f"Initializing Blockstream Jade Plus (Simulated mode: {self.simulated})...")
+    def __init__(self, port=None):
+        self.port = port or self._detect_port()
+        self.simulated = "None" in self.port or "simulated" in self.port
+        print(f"Initializing Blockstream Jade Plus (Port: {self.port}, Simulated: {self.simulated})...")
+
+    def _detect_port(self) -> str:
+        ports = glob.glob("/dev/cu.usb*") + glob.glob("/dev/cu.usbmodem*")
+        return ports[0] if ports else "simulated_port"
 
     def sign_vote_commitment(self, commitment_hash: str) -> dict:
         if self.simulated:
@@ -19,7 +24,7 @@ class JadeHardwareSigner:
                 "status": "signed_secure_enclave"
             }
         else:
-            raise NotImplementedError("Physical Jade connection requires active serial daemon binding.")
+            raise NotImplementedError(f"Physical Jade connection on {self.port} requires serial daemon binding.")
 
 if __name__ == "__main__":
     signer = JadeHardwareSigner()
